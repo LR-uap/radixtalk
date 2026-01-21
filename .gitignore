@@ -1,0 +1,5 @@
+node_modules/
+.env
+*.session
+*.session-journal
+.DS_Store
