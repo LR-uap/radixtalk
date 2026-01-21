@@ -1,5 +1,0 @@
-telethon
-fastapi
-uvicorn
-requests
-python-multipart
