@@ -17,23 +17,35 @@ const client = new TelegramClient(stringSession, apiId, apiHash, {
   connectionRetries: 5,
 });
 
+// Remplace la fonction checkRadix dans index.js
 async function checkRadix(lastId) {
   try {
     const response = await axios.get("https://radixtalk.com/posts.json");
-    const latestPost = response.data.latest_posts[0];
+    const allPosts = response.data.latest_posts;
 
-    if (latestPost.id > lastId) {
-      if (!client.connected) await client.connect();
+    // 1. Filtrer pour ne garder que les messages PLUS RÉCENTS que lastId
+    // On les trie par ID croissant (du plus vieux au plus récent)
+    const newPosts = allPosts
+      .filter(post => post.id > lastId)
+      .sort((a, b) => a.id - b.id);
 
-      const title = latestPost.topic_title;
-      const author = latestPost.display_username || latestPost.username || "Anonyme";
-      // Nettoyage pour éviter les erreurs de formatage Markdown
-      const cleanBody = latestPost.raw.substring(0, 400).replace(/[#*`_]/g, '');
-      
-      // Lien direct vers le message spécifique
-      const link = `https://radixtalk.com/t/${latestPost.topic_id}/${latestPost.post_number}`;
+    if (newPosts.length === 0) {
+      return { newPost: false, id: lastId };
+    }
 
-      // Message Telegram optimisé
+    if (!client.connected) await client.connect();
+
+    console.log(`📥 ${newPosts.length} nouveaux messages détectés. Envoi en cours...`);
+
+    let lastSentId = lastId;
+
+    // 2. Boucle sur chaque nouveau message
+    for (const post of newPosts) {
+      const title = post.topic_title;
+      const author = post.display_username || post.username || "Anonyme";
+      const cleanBody = post.raw.substring(0, 400).replace(/[#*`_]/g, '');
+      const link = `https://radixtalk.com/t/${post.topic_id}/${post.post_number}`;
+
       const message = `🔹 **Nouveau message sur RadixTalk**\n\n` +
                       `📌 **Sujet :** ${title}\n` +
                       `👤 **Posté par :** ${author}\n\n` +
@@ -43,19 +55,26 @@ async function checkRadix(lastId) {
       await client.sendMessage(channelId, {
         message: message,
         parseMode: "markdown",
-        linkPreview: false 
+        linkPreview: false
       });
 
-      // IMPORTANT : On renvoie TOUTES les infos à Google Sheets ici
-      return { 
-        newPost: true, 
-        id: latestPost.id, 
-        title: title, 
-        author: author,
-        url: link 
-      };
+      lastSentId = post.id;
+      console.log(`✅ Message ${post.id} envoyé. Pause de 5s...`);
+
+      // 3. Respect du Rate Limit : Pause de 5 secondes avant le suivant
+      // (Sauf si c'est le dernier message de la liste)
+      if (newPosts.indexOf(post) !== newPosts.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
     }
-    return { newPost: false, id: lastId };
+
+    return { 
+      newPost: true, 
+      id: lastSentId, 
+      count: newPosts.length,
+      lastAuthor: newPosts[newPosts.length - 1].display_username,
+      lastTitle: newPosts[newPosts.length - 1].topic_title
+    };
   } catch (error) {
     console.error("Erreur RadixTalk:", error.message);
     return { error: error.message };
