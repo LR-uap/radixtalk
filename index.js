@@ -23,23 +23,41 @@ async function checkRadix(lastId) {
     const latestPost = response.data.latest_posts[0];
 
     if (latestPost.id > lastId) {
-      const title = latestPost.topic_title;
-      // Remove Markdown symbols for cleaner Telegram post
-      const cleanBody = latestPost.raw.substring(0, 400).replace(/[#*`_]/g, '');
-      const link = `https://radixtalk.com/t/${latestPost.topic_id}`;
+      if (!client.connected) await client.connect();
 
-      const message = `**📢 New on RadixTalk**\n\n**${title}**\n\n${cleanBody}...\n\n🔗 [Read More](${link})`;
+      const title = latestPost.topic_title;
+      const author = latestPost.display_username || latestPost.username || "Anonyme";
+      // Nettoyage pour éviter les erreurs de formatage Markdown
+      const cleanBody = latestPost.raw.substring(0, 400).replace(/[#*`_]/g, '');
+      
+      // Lien direct vers le message spécifique
+      const link = `https://radixtalk.com/t/${latestPost.topic_id}/${latestPost.post_number}`;
+
+      // Message Telegram optimisé
+      const message = `🔹 **Nouveau message sur RadixTalk**\n\n` +
+                      `📌 **Sujet :** ${title}\n` +
+                      `👤 **Posté par :** ${author}\n\n` +
+                      `💬 **Extrait :**\n_${cleanBody}..._\n\n` +
+                      `🔗 [Répondre sur le forum](${link})`;
 
       await client.sendMessage(channelId, {
         message: message,
         parseMode: "markdown",
+        linkPreview: false 
       });
 
-      return { newPost: true, id: latestPost.id };
+      // IMPORTANT : On renvoie TOUTES les infos à Google Sheets ici
+      return { 
+        newPost: true, 
+        id: latestPost.id, 
+        title: title, 
+        author: author,
+        url: link 
+      };
     }
     return { newPost: false, id: lastId };
   } catch (error) {
-    console.error("Error checking RadixTalk:", error.message);
+    console.error("Erreur RadixTalk:", error.message);
     return { error: error.message };
   }
 }
